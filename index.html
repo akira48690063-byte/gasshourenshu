@@ -1,0 +1,1598 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>合唱パート練習ナビ - JSON即時読み込み＆練習モード完全版</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;600;700;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'M PLUS Rounded 1c', 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        /* Marker Pin Styling with Pointer Anchor */
+        .marker-pin-wrapper {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
+            z-index: 20;
+            transition: transform 0.1s ease;
+        }
+        .marker-pin-wrapper:active {
+            cursor: grabbing;
+            transform: translate(-50%, -110%) scale(1.1);
+            z-index: 50;
+        }
+
+        .marker-pin-card {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #6366f1;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            border: 2px solid #ffffff;
+            white-space: nowrap;
+            position: relative;
+        }
+        .marker-pin-card::after {
+            content: '';
+            position: absolute;
+            bottom: -7px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 7px 6px 0 6px;
+            border-style: solid;
+            border-color: #6366f1 transparent transparent transparent;
+        }
+
+        /* Part Color Accents */
+        .part-soprano .marker-pin-card { background: #ec4899; }
+        .part-soprano .marker-pin-card::after { border-color: #ec4899 transparent transparent transparent; }
+
+        .part-alto .marker-pin-card { background: #a855f7; }
+        .part-alto .marker-pin-card::after { border-color: #a855f7 transparent transparent transparent; }
+
+        .part-mens .marker-pin-card { background: #0284c7; }
+        .part-mens .marker-pin-card::after { border-color: #0284c7 transparent transparent transparent; }
+
+        /* Playing Pin Pulsing Highlight */
+        .marker-pin-wrapper.active-pin .marker-pin-card {
+            background: #f59e0b !important;
+            color: #ffffff;
+            border-color: #fef08a;
+            animation: pulse-pin 1.2s infinite;
+        }
+        .marker-pin-wrapper.active-pin .marker-pin-card::after {
+            border-color: #f59e0b transparent transparent transparent !important;
+        }
+
+        @keyframes pulse-pin {
+            0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.8); }
+            70% { box-shadow: 0 0 0 14px rgba(245, 158, 11, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+
+        /* Fullscreen Practice Mode Container Styling & Heights Optimization */
+        #scoreViewportContainer.fullscreen-mode {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999 !important;
+            background-color: #090d16 !important;
+            border-radius: 0 !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        .score-container {
+            cursor: crosshair;
+            margin: 0 auto;
+            position: relative;
+            display: inline-block;
+        }
+
+        /* Fit Contain Mode Rules */
+        .fit-mode #scoreViewport {
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            height: 100% !important;
+            width: 100% !important;
+            overflow: hidden !important;
+        }
+        .fit-mode .score-container {
+            max-height: 100% !important;
+            max-width: 100% !important;
+            width: auto !important;
+            height: auto !important;
+        }
+        .fit-mode #scoreImage {
+            max-height: calc(100vh - 120px) !important;
+            max-width: 100% !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            display: block;
+        }
+
+        /* Scroll Mode Rules */
+        .scroll-mode #scoreViewport {
+            overflow: auto !important;
+            height: 100% !important;
+            width: 100% !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: flex-start !important;
+        }
+        .scroll-mode #scoreImage {
+            max-height: none !important;
+            max-width: none !important;
+            display: block;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between bg-slate-900 text-slate-100">
+
+    <header class="bg-slate-800/80 backdrop-blur-md border-b border-slate-700/60 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 text-white p-2.5 rounded-xl shadow-lg font-bold text-xl">
+                    <i class="fa-solid fa-music"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-extrabold tracking-wide flex items-center gap-2">
+                        合唱パート練習ナビ
+                        <span class="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">JSON即時プリセット搭載</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">事前設定不要！楽譜タップ再生 / パート切り替え / JSON入出力対応</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+                <button id="fullscreenToggleHeaderBtn" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl shadow-md transition flex items-center gap-2">
+                    <i class="fa-solid fa-expand text-sm"></i>
+                    <span>練習モード (全画面)</span>
+                </button>
+
+                <!-- JSON Import / Export Quick Actions -->
+                <button id="exportJsonBtn" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 text-indigo-300 hover:text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5" title="現在の曲データをJSONとして書き出し">
+                    <i class="fa-solid fa-file-export"></i>
+                    <span>JSON保存</span>
+                </button>
+
+                <label class="bg-slate-700 hover:bg-slate-600 border border-slate-600 text-emerald-300 hover:text-white font-bold text-xs px-3 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5" title="JSONプロジェクトファイルを読み込み">
+                    <i class="fa-solid fa-file-import"></i>
+                    <span>JSON読込</span>
+                    <input type="file" id="importJsonInput" accept=".json" class="hidden">
+                </label>
+
+                <select id="presetSelect" class="bg-slate-700 border border-slate-600 text-slate-100 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none cursor-pointer">
+                    <option value="demo1">🎵 【標準プリセット】翼をください (混声3パート)</option>
+                    <option value="saved" id="savedOption" class="hidden">💾 【自動保存済み】前回の続き</option>
+                    <option value="custom">⚙️ 【カスタム設定】手動で画像・音源を設定</option>
+                </select>
+
+                <button id="clearSaveDataBtn" class="hidden text-xs bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-bold px-2.5 py-2 rounded-xl transition items-center gap-1 shadow-sm" title="保存データを削除して初期化">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Save & Import Notification Toast -->
+    <div id="saveToast" class="fixed bottom-5 right-5 bg-slate-800 text-emerald-400 border border-emerald-500/30 text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl opacity-0 transition-all duration-300 pointer-events-none z-50 flex items-center gap-2.5">
+        <i class="fa-solid fa-circle-check text-base"></i>
+        <span id="saveToastText">データを読み込みました</span>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 py-5 w-full flex-grow flex flex-col gap-5">
+
+        <!-- File Upload Panel (Hidden in Demo/JSON mode, Visible in Custom mode) -->
+        <div id="uploadPanel" class="bg-slate-800/60 rounded-2xl p-4 border border-slate-700/80 hidden shadow-xl">
+            <h2 class="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-cloud-arrow-up text-indigo-400"></i> 楽譜写真と各パート音源のアップロード
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Image File Input -->
+                <div class="border-2 border-dashed border-indigo-500/30 rounded-xl p-4 bg-indigo-950/20 hover:bg-indigo-950/40 transition flex flex-col items-center justify-center text-center">
+                    <i class="fa-solid fa-images text-3xl text-indigo-400 mb-2"></i>
+                    <label class="text-xs font-bold text-indigo-300 mb-1 cursor-pointer hover:underline">
+                        ① 楽譜写真を指定（複数可）
+                        <input type="file" id="imageInput" accept="image/*" multiple class="hidden">
+                    </label>
+                    <span id="imageFileName" class="text-[11px] text-slate-400">（※ ページ順に読み込まれます）</span>
+                </div>
+
+                <!-- Part Audio Input -->
+                <div class="border-2 border-dashed border-emerald-500/30 rounded-xl p-3 bg-emerald-950/20 hover:bg-emerald-950/40 transition flex flex-col gap-2 justify-center">
+                    <span class="text-xs font-bold text-emerald-300 flex items-center gap-1">
+                        <i class="fa-solid fa-file-audio text-emerald-400"></i> ② 音源ファイルを選択 (パート別設定可)
+                    </span>
+                    <div class="grid grid-cols-2 gap-2 text-[11px]">
+                        <label class="bg-slate-800 p-2 rounded border border-slate-600 text-slate-300 cursor-pointer hover:bg-slate-700 flex items-center justify-between">
+                            <span>Mix/全体:</span>
+                            <input type="file" id="audioInputMix" accept="audio/*" class="hidden">
+                            <span id="audioNameMix" class="text-slate-400 font-normal truncate max-w-[80px]">未選択</span>
+                        </label>
+                        <label class="bg-slate-800 p-2 rounded border border-pink-500/40 text-slate-300 cursor-pointer hover:bg-slate-700 flex items-center justify-between">
+                            <span>ソプラノ:</span>
+                            <input type="file" id="audioInputSoprano" accept="audio/*" class="hidden">
+                            <span id="audioNameSoprano" class="text-slate-400 font-normal truncate max-w-[80px]">未選択</span>
+                        </label>
+                        <label class="bg-slate-800 p-2 rounded border border-purple-500/40 text-slate-300 cursor-pointer hover:bg-slate-700 flex items-center justify-between">
+                            <span>アルト:</span>
+                            <input type="file" id="audioInputAlto" accept="audio/*" class="hidden">
+                            <span id="audioNameAlto" class="text-slate-400 font-normal truncate max-w-[80px]">未選択</span>
+                        </label>
+                        <label class="bg-slate-800 p-2 rounded border border-sky-500/40 text-slate-300 cursor-pointer hover:bg-slate-700 flex items-center justify-between">
+                            <span>男声パート:</span>
+                            <input type="file" id="audioInputMens" accept="audio/*" class="hidden">
+                            <span id="audioNameMens" class="text-slate-400 font-normal truncate max-w-[80px]">未選択</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">※全体音源だけでも利用できます。右上の「JSON保存」を使えば作成した楽曲セットを他の人に一括配布できます。</p>
+        </div>
+
+        <!-- Part Switcher Bar -->
+        <div class="bg-slate-800/80 rounded-2xl p-3 border border-slate-700/80 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-users text-indigo-400"></i> 練習パート:
+                </span>
+                <div class="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-700">
+                    <button id="partBtnMix" class="part-tab-btn px-3 py-1.5 text-xs font-bold rounded-lg transition bg-indigo-600 text-white shadow-xs" data-part="mix">
+                        <i class="fa-solid fa-layer-group mr-1"></i>全体 (Mix)
+                    </button>
+                    <button id="partBtnSoprano" class="part-tab-btn px-3 py-1.5 text-xs font-bold rounded-lg transition text-slate-300 hover:bg-pink-950/60 hover:text-pink-300" data-part="soprano">
+                        <i class="fa-solid fa-person-dress mr-1"></i>ソプラノ
+                    </button>
+                    <button id="partBtnAlto" class="part-tab-btn px-3 py-1.5 text-xs font-bold rounded-lg transition text-slate-300 hover:bg-purple-950/60 hover:text-purple-300" data-part="alto">
+                        <i class="fa-solid fa-person-dress-burst mr-1"></i>アルト
+                    </button>
+                    <button id="partBtnMens" class="part-tab-btn px-3 py-1.5 text-xs font-bold rounded-lg transition text-slate-300 hover:bg-sky-950/60 hover:text-sky-300" data-part="mens">
+                        <i class="fa-solid fa-person mr-1"></i>男声 (テノール・バス)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Current Active Part Badge Indicator -->
+            <div id="currentPartBadge" class="text-xs font-bold px-3 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-950/40 text-indigo-300 flex items-center gap-2">
+                <i class="fa-solid fa-headphones"></i>
+                <span>選択中: 混声全体 (Mix)</span>
+            </div>
+        </div>
+
+        <!-- Player Controls Bar -->
+        <div class="bg-slate-800/80 rounded-2xl p-4 border border-slate-700/80 flex flex-col gap-3 shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <!-- Playback Buttons -->
+                <div class="flex items-center space-x-3">
+                    <button id="playBtn" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-extrabold px-6 py-3 rounded-xl shadow-lg transition flex items-center gap-2">
+                        <i class="fa-solid fa-play text-lg" id="playIcon"></i>
+                        <span id="playText">再生</span>
+                    </button>
+                    <button id="stopBtn" class="bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-200 font-bold p-3 rounded-xl transition" title="停止して頭出し">
+                        <i class="fa-solid fa-stop text-lg"></i>
+                    </button>
+                    <div class="text-xs font-mono font-bold text-slate-300 bg-slate-900/80 border border-slate-700 px-3 py-2.5 rounded-xl">
+                        <span id="currentTimeText">00:00</span> / <span id="durationTimeText">00:00</span>
+                    </div>
+                </div>
+
+                <!-- Audio Utilities (Speed, Marker, Loop) -->
+                <div class="flex flex-wrap items-center gap-2.5 text-xs font-semibold">
+                    <div class="flex items-center gap-1.5 bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-700">
+                        <i class="fa-solid fa-gauge-high text-indigo-400"></i>
+                        <span class="text-slate-400">速度:</span>
+                        <select id="speedSelect" class="bg-slate-800 text-slate-200 border border-slate-600 rounded px-2 py-0.5 font-bold focus:outline-none">
+                            <option value="0.5">0.5x</option>
+                            <option value="0.75">0.75x</option>
+                            <option value="1.0" selected>1.0x</option>
+                            <option value="1.25">1.25x</option>
+                        </select>
+                    </div>
+
+                    <button id="addMarkerNowBtn" class="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold px-3 py-2 rounded-xl shadow transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-bookmark"></i>
+                        <span>現在位置でピン追加</span>
+                    </button>
+
+                    <button id="loopToggleBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold px-3 py-2 rounded-xl border border-slate-600 flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-repeat"></i>
+                        <span>A-Bループ: <span id="loopStatusText" class="text-slate-400">OFF</span></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Audio Progress Bar Seeker -->
+            <div class="flex items-center gap-3">
+                <input type="range" id="audioSeeker" min="0" max="100" value="0" step="0.1" class="w-full accent-indigo-500 cursor-pointer h-2 bg-slate-700 rounded-lg">
+            </div>
+        </div>
+
+        <div id="scoreViewportContainer" class="bg-slate-800/80 rounded-2xl border border-slate-700/80 p-4 flex flex-col gap-3 shadow-xl relative transition-all duration-300 fit-mode">
+            
+            <!-- Fullscreen Practice Mode Overlay Control Bar -->
+            <div id="fullscreenOverlayBar" class="hidden fullscreen-overlay-controls shrink-0 bg-slate-900/95 backdrop-blur-md border-b border-slate-700 p-2.5 shadow-2xl flex flex-wrap justify-between items-center gap-2 z-50">
+                <div class="flex items-center gap-2">
+                    <button id="fsPlayBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-play" id="fsPlayIcon"></i>
+                        <span id="fsPlayText">再生</span>
+                    </button>
+                    <div class="text-xs font-mono font-bold text-indigo-300 bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700">
+                        <span id="fsCurrentTimeText">00:00</span>
+                    </div>
+
+                    <input type="range" id="fsAudioSeeker" min="0" max="100" value="0" step="0.1" class="w-24 md:w-36 accent-indigo-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg">
+                </div>
+
+                <!-- Part Switcher Pill for Practice Mode -->
+                <div class="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs">
+                    <button class="part-tab-btn px-2 py-1 rounded-lg font-bold transition" data-part="mix">全体</button>
+                    <button class="part-tab-btn px-2 py-1 rounded-lg font-bold transition" data-part="soprano">ソプラノ</button>
+                    <button class="part-tab-btn px-2 py-1 rounded-lg font-bold transition" data-part="alto">アルト</button>
+                    <button class="part-tab-btn px-2 py-1 rounded-lg font-bold transition" data-part="mens">男声</button>
+                </div>
+
+                <!-- View Mode Toggle & Navigation Buttons -->
+                <div class="flex items-center gap-2">
+                    <button id="toggleFitModeBtn" class="bg-indigo-900/80 hover:bg-indigo-800 border border-indigo-500/40 text-indigo-200 px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow">
+                        <i class="fa-solid fa-up-right-and-down-left-from-center" id="fitIcon"></i>
+                        <span id="fitText">全表示 (Fit)</span>
+                    </button>
+
+                    <div class="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-bold">
+                        <button id="fsPrevPageBtn" class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200">
+                            <i class="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <span id="fsPageIndicator" class="font-mono text-indigo-300 px-1">1 / 3</span>
+                        <button id="fsNextPageBtn" class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                    </div>
+
+                    <button id="exitFullscreenBtn" class="bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs px-3 py-1.5 rounded-xl transition flex items-center gap-1">
+                        <i class="fa-solid fa-compress"></i> 終了
+                    </button>
+                </div>
+            </div>
+
+            <!-- Standard Mode Viewport Header -->
+            <div id="standardViewportHeader" class="flex flex-wrap justify-between items-center gap-3 pb-2 border-b border-slate-700/60">
+                <div class="flex flex-wrap items-center gap-3">
+                    <h2 class="font-extrabold text-slate-200 text-base flex items-center gap-2">
+                        <i class="fa-solid fa-book-open text-indigo-400"></i> 楽譜ビューア
+                    </h2>
+
+                    <!-- Page Switcher Tabs -->
+                    <div id="pageTabsContainer" class="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-700">
+                        <!-- Dynamic page tabs -->
+                    </div>
+                </div>
+
+                <!-- Viewport Control Buttons (Zoom & Fullscreen) -->
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button id="enterFullscreenBtn" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-expand"></i> 練習モード (全画面)
+                    </button>
+
+                    <div class="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-700 text-xs font-bold">
+                        <button id="zoomOutBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 w-7 h-7 rounded-lg flex items-center justify-center transition"><i class="fa-solid fa-minus"></i></button>
+                        <input type="range" id="zoomSlider" min="10" max="200" value="100" step="5" class="w-20 accent-indigo-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg">
+                        <button id="zoomInBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 w-7 h-7 rounded-lg flex items-center justify-center transition"><i class="fa-solid fa-plus"></i></button>
+                        <span id="zoomValText" class="w-10 text-center text-indigo-400 font-mono">100%</span>
+                        <button id="zoomResetBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 h-7 rounded-lg transition text-[11px]">リセット</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Standard Mode Page Navigation Line -->
+            <div id="standardPageNav" class="flex flex-wrap justify-between items-center text-xs text-slate-400 px-1 gap-2">
+                <span>💡 楽譜上のタップでタイムスタンプ再生。ドラッグでピン位置を調整できます。</span>
+                <div class="flex items-center gap-2 font-bold">
+                    <button id="prevPageBtn" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition">
+                        <i class="fa-solid fa-chevron-left"></i> 前のページ
+                    </button>
+                    <span id="pageIndicatorText" class="text-indigo-400 font-mono">Page 1 / 3</span>
+                    <button id="nextPageBtn" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition">
+                        次のページ <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="scoreViewport" class="relative border border-slate-700 rounded-xl bg-slate-950 min-h-[300px] shadow-inner select-none flex-grow">
+                <div id="scoreImageContainer" class="score-container">
+                    <img id="scoreImage" src="" alt="楽譜" class="rounded-lg pointer-events-auto">
+                    <div id="pinsOverlay" class="absolute inset-0 pointer-events-none">
+                        <!-- Dynamic Timestamp Pins rendered here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-slate-800/80 rounded-2xl border border-slate-700/80 p-4 shadow-lg">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-indigo-400"></i> 登録済みタイムスタンプ一覧
+                </h3>
+                <button id="clearPinsBtn" class="text-xs text-rose-400 hover:text-rose-300 font-bold transition flex items-center gap-1">
+                    <i class="fa-solid fa-trash-can"></i> すべて削除
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900/80 text-slate-400 border-b border-slate-700 font-bold">
+                            <th class="p-2.5">ページ</th>
+                            <th class="p-2.5">小節名 / ラベル</th>
+                            <th class="p-2.5">開始時間</th>
+                            <th class="p-2.5">対象パート</th>
+                            <th class="p-2.5">画像座標 (X%, Y%)</th>
+                            <th class="p-2.5 text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="markersTableBody" class="divide-y divide-slate-700/60 text-slate-300">
+                        <!-- Dynamic rows populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal Dialog -->
+    <div id="customModal" class="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden opacity-0 transition-opacity duration-200">
+        <div class="bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-700 flex flex-col gap-4">
+            <h3 id="modalTitle" class="font-extrabold text-slate-100 text-base">確認</h3>
+            <p id="modalMessage" class="text-xs text-slate-300 leading-relaxed">処理を実行しますか？</p>
+            <div class="flex justify-end gap-2 pt-2">
+                <button id="modalCancelBtn" class="px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-700 rounded-xl transition">キャンセル</button>
+                <button id="modalConfirmBtn" class="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-xl shadow transition">実行する</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Footer -->
+    <footer class="bg-slate-900 border-t border-slate-800 py-3 text-center text-xs text-slate-500">
+        <p>合唱パート練習ナビゲーター &copy; 2026 - JSON Preset & Export Edition</p>
+    </footer>
+
+    <script>
+        /* Database & Local Persistence via IndexedDB */
+        const DB_NAME = 'ChorusPartPracticeDB';
+        const DB_VERSION = 2;
+        const STORE_NAME = 'practiceSession';
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, DB_VERSION);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+                req.onsuccess = (e) => resolve(e.target.result);
+                req.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function saveSessionToDB() {
+            try {
+                const db = await openDB();
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+
+                const saveData = {
+                    scorePages: scorePages,
+                    audioBlobs: audioBlobs,
+                    audioFileNames: audioFileNames,
+                    markers: activeMarkers,
+                    selectedPart: selectedPart,
+                    updatedAt: Date.now()
+                };
+
+                store.put(saveData, 'currentSession');
+                
+                tx.oncomplete = () => {
+                    showSaveToast('💾 練習データを保存しました');
+                    updateSavedOptionUI(true);
+                };
+            } catch (err) {
+                console.warn('Auto save failed:', err);
+            }
+        }
+
+        async function loadSessionFromDB() {
+            try {
+                const db = await openDB();
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                const req = store.get('currentSession');
+
+                return new Promise((resolve) => {
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => resolve(null);
+                });
+            } catch (err) {
+                return null;
+            }
+        }
+
+        async function clearSessionFromDB() {
+            try {
+                const db = await openDB();
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.delete('currentSession');
+                showSaveToast('🗑️ 保存データをクリアしました');
+                updateSavedOptionUI(false);
+            } catch (err) {
+                console.warn('Clear failed:', err);
+            }
+        }
+
+        function showSaveToast(msg) {
+            const toast = document.getElementById('saveToast');
+            const toastText = document.getElementById('saveToastText');
+            if (toast && toastText) {
+                toastText.innerText = msg;
+                toast.classList.remove('opacity-0');
+                setTimeout(() => toast.classList.add('opacity-0'), 2200);
+            }
+        }
+
+        function updateSavedOptionUI(hasData) {
+            const savedOpt = document.getElementById('savedOption');
+            const resetBtn = document.getElementById('clearSaveDataBtn');
+            if (hasData) {
+                if (savedOpt) savedOpt.classList.remove('hidden');
+                if (resetBtn) {
+                    resetBtn.classList.remove('hidden');
+                    resetBtn.classList.add('flex');
+                }
+            } else {
+                if (savedOpt) savedOpt.classList.add('hidden');
+                if (resetBtn) {
+                    resetBtn.classList.add('hidden');
+                    resetBtn.classList.remove('flex');
+                }
+            }
+        }
+
+        /* Modal Dialog Helper */
+        function showConfirmModal(title, message, onConfirm) {
+            const modal = document.getElementById('customModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalMessage = document.getElementById('modalMessage');
+            const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+            const modalCancelBtn = document.getElementById('modalCancelBtn');
+
+            if (!modal) return;
+
+            modalTitle.innerText = title;
+            modalMessage.innerText = message;
+
+            modal.classList.remove('hidden');
+            setTimeout(() => modal.classList.remove('opacity-0'), 10);
+
+            const closeModal = () => {
+                modal.classList.add('opacity-0');
+                setTimeout(() => modal.classList.add('hidden'), 200);
+            };
+
+            modalConfirmBtn.onclick = () => {
+                closeModal();
+                if (onConfirm) onConfirm();
+            };
+
+            modalCancelBtn.onclick = closeModal;
+        }
+
+        /* Pre-loaded Built-in Preset JSON Song Data */
+        const DEMO_PRESET_3P = {
+            title: '翼をください (混声三部合唱)',
+            pages: [
+                createMockScoreSVG('翼をください - 1ページ目 (前奏・Aメロ)', '1/3', ['1小節: 前奏', '5小節: Aメロ①']),
+                createMockScoreSVG('翼をください - 2ページ目 (Bメロ・展開)', '2/3', ['9小節: Bメロ', '13小節: Aメロ②']),
+                createMockScoreSVG('翼をください - 3ページ目 (サビ・後奏)', '3/3', ['17小節: サビ', '21小節: 後奏・Ending'])
+            ],
+            markers: [
+                { id: 1, pageIndex: 0, label: '1小節 (前奏)', time: 0.0, targetPart: 'mix', xPct: 15.2, yPct: 35.5 },
+                { id: 2, pageIndex: 0, label: '5小節 (ソプラノ出だし)', time: 8.5, targetPart: 'soprano', xPct: 56.4, yPct: 35.5 },
+                { id: 3, pageIndex: 1, label: '9小節 (アルト主旋律)', time: 17.0, targetPart: 'alto', xPct: 15.2, yPct: 35.5 },
+                { id: 4, pageIndex: 1, label: '13小節 (男声ハモリ)', time: 25.5, targetPart: 'mens', xPct: 56.4, yPct: 35.5 },
+                { id: 5, pageIndex: 2, label: '17小節 (全員サビ合唱)', time: 34.0, targetPart: 'mix', xPct: 15.2, yPct: 35.5 },
+                { id: 6, pageIndex: 2, label: '21小節 (エンディング)', time: 42.5, targetPart: 'mix', xPct: 56.4, yPct: 35.5 }
+            ]
+        };
+
+        function createMockScoreSVG(title, pageLabel, barLabels) {
+            const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="950" height="600" viewBox="0 0 950 600" style="background:#ffffff;">
+                <rect width="950" height="600" fill="#ffffff"/>
+                <text x="475" y="45" font-family="'M PLUS Rounded 1c', sans-serif" font-size="22" font-weight="bold" fill="#1e293b" text-anchor="middle">${title}</text>
+                <text x="870" y="45" font-family="sans-serif" font-size="14" font-weight="bold" fill="#4f46e5" text-anchor="end">Page ${pageLabel}</text>
+                
+                <!-- System 1 -->
+                <g transform="translate(50, 120)">
+                    <text x="0" y="20" font-family="sans-serif" font-size="14" font-weight="bold" fill="#ec4899">🎼 Soprano</text>
+                    <text x="120" y="20" font-family="sans-serif" font-size="14" font-weight="bold" fill="#a855f7">🎼 Alto</text>
+                    <text x="210" y="20" font-family="sans-serif" font-size="14" font-weight="bold" fill="#0284c7">𝄢 Tenor / Bass (男声)</text>
+                    ${[35, 45, 55, 65, 75].map(y => `<line x1="0" y1="${y}" x2="850" y2="${y}" stroke="#475569" stroke-width="1.5"/>`).join('')}
+                    ${[105, 115, 125, 135, 145].map(y => `<line x1="0" y1="${y}" x2="850" y2="${y}" stroke="#475569" stroke-width="1.5"/>`).join('')}
+                    <text x="10" y="65" font-size="32" fill="#1e293b">🎼</text>
+                    <text x="10" y="135" font-size="32" fill="#1e293b">𝄢</text>
+                    <line x1="0" y1="35" x2="0" y2="145" stroke="#1e293b" stroke-width="3"/>
+                    <line x1="425" y1="35" x2="425" y2="145" stroke="#1e293b" stroke-width="2"/>
+                    <line x1="850" y1="35" x2="850" y2="145" stroke="#1e293b" stroke-width="3"/>
+
+                    <circle cx="80" cy="55" r="5" fill="#ec4899"/><line x1="85" y1="55" x2="85" y2="25" stroke="#1e293b" stroke-width="2"/>
+                    <circle cx="130" cy="65" r="5" fill="#a855f7"/><line x1="135" y1="65" x2="135" y2="35" stroke="#1e293b" stroke-width="2"/>
+                    <circle cx="180" cy="125" r="5" fill="#0284c7"/><line x1="185" y1="125" x2="185" y2="95" stroke="#1e293b" stroke-width="2"/>
+
+                    <text x="40" y="22" font-family="sans-serif" font-size="14" font-weight="bold" fill="#059669">【 ${barLabels[0]} 】</text>
+                    <text x="460" y="22" font-family="sans-serif" font-size="14" font-weight="bold" fill="#059669">【 ${barLabels[1]} 】</text>
+                </g>
+
+                <!-- System 2 -->
+                <g transform="translate(50, 360)">
+                    <text x="0" y="20" font-family="sans-serif" font-size="14" font-weight="bold" fill="#475569">🎼 Soprano / Alto / 男声パート</text>
+                    ${[35, 45, 55, 65, 75].map(y => `<line x1="0" y1="${y}" x2="850" y2="${y}" stroke="#475569" stroke-width="1.5"/>`).join('')}
+                    ${[105, 115, 125, 135, 145].map(y => `<line x1="0" y1="${y}" x2="850" y2="${y}" stroke="#475569" stroke-width="1.5"/>`).join('')}
+                    <text x="10" y="65" font-size="32" fill="#1e293b">🎼</text>
+                    <text x="10" y="135" font-size="32" fill="#1e293b">𝄢</text>
+                    <line x1="0" y1="35" x2="0" y2="145" stroke="#1e293b" stroke-width="3"/>
+                    <line x1="425" y1="35" x2="425" y2="145" stroke="#1e293b" stroke-width="2"/>
+                    <line x1="850" y1="35" x2="850" y2="145" stroke="#1e293b" stroke-width="3"/>
+                </g>
+                
+                <text x="475" y="570" font-family="sans-serif" font-size="12" fill="#64748b" text-anchor="middle">💡 設定不要で誰でもすぐに合唱パート練習を開始できます（JSON書き出し/配布可能）</text>
+            </svg>
+            `;
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        }
+
+        let scorePages = [];
+        let currentPageIndex = 0;
+        let activeMarkers = [];
+        let currentZoom = 100;
+        let isFitMode = true;
+
+        let selectedPart = 'mix';
+        let audioBlobs = { mix: null, soprano: null, alto: null, mens: null };
+        let audioFileNames = { mix: '', soprano: '', alto: '', mens: '' };
+
+        let audioPlayer = new Audio();
+        let synthAudioCtx = null;
+        let isUsingSynth = true;
+        let synthTimer = null;
+
+        let isLooping = false;
+        let loopStart = 0;
+        let loopEnd = 0;
+
+        let draggingMarkerId = null;
+        let isFullscreenMode = false;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const presetSelect = document.getElementById('presetSelect');
+            const uploadPanel = document.getElementById('uploadPanel');
+            const imageInput = document.getElementById('imageInput');
+            const clearSaveDataBtn = document.getElementById('clearSaveDataBtn');
+
+            const exportJsonBtn = document.getElementById('exportJsonBtn');
+            const importJsonInput = document.getElementById('importJsonInput');
+
+            const playBtn = document.getElementById('playBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            const audioSeeker = document.getElementById('audioSeeker');
+            const fsAudioSeeker = document.getElementById('fsAudioSeeker');
+            const currentTimeText = document.getElementById('currentTimeText');
+            const durationTimeText = document.getElementById('durationTimeText');
+            const speedSelect = document.getElementById('speedSelect');
+            const addMarkerNowBtn = document.getElementById('addMarkerNowBtn');
+            const loopToggleBtn = document.getElementById('loopToggleBtn');
+            const clearPinsBtn = document.getElementById('clearPinsBtn');
+
+            const prevPageBtn = document.getElementById('prevPageBtn');
+            const nextPageBtn = document.getElementById('nextPageBtn');
+
+            const zoomSlider = document.getElementById('zoomSlider');
+            const zoomInBtn = document.getElementById('zoomInBtn');
+            const zoomOutBtn = document.getElementById('zoomOutBtn');
+            const zoomResetBtn = document.getElementById('zoomResetBtn');
+
+            const enterFullscreenBtn = document.getElementById('enterFullscreenBtn');
+            const fullscreenToggleHeaderBtn = document.getElementById('fullscreenToggleHeaderBtn');
+            const exitFullscreenBtn = document.getElementById('exitFullscreenBtn');
+            const toggleFitModeBtn = document.getElementById('toggleFitModeBtn');
+            const fsPlayBtn = document.getElementById('fsPlayBtn');
+            const fsPrevPageBtn = document.getElementById('fsPrevPageBtn');
+            const fsNextPageBtn = document.getElementById('fsNextPageBtn');
+
+            const scoreImageContainer = document.getElementById('scoreImageContainer');
+
+            // Part Switcher Event Listeners
+            document.querySelectorAll('.part-tab-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const part = e.currentTarget.getAttribute('data-part');
+                    switchPart(part);
+                });
+            });
+
+            // Fullscreen Practice Mode & Display Fit Listeners
+            enterFullscreenBtn.addEventListener('click', toggleFullscreenPracticeMode);
+            fullscreenToggleHeaderBtn.addEventListener('click', toggleFullscreenPracticeMode);
+            exitFullscreenBtn.addEventListener('click', toggleFullscreenPracticeMode);
+            toggleFitModeBtn.addEventListener('click', toggleFitDisplayMode);
+
+            if (fsPlayBtn) fsPlayBtn.addEventListener('click', togglePlayPause);
+            if (fsPrevPageBtn) fsPrevPageBtn.addEventListener('click', () => switchPage(currentPageIndex - 1));
+            if (fsNextPageBtn) fsNextPageBtn.addEventListener('click', () => switchPage(currentPageIndex + 1));
+
+            // JSON Export Action
+            exportJsonBtn.addEventListener('click', exportProjectToJSON);
+
+            // JSON Import Action
+            importJsonInput.addEventListener('change', importProjectFromJSON);
+
+            // Load Saved Session or Default Demo Preset on Launch
+            const savedSession = await loadSessionFromDB();
+            if (savedSession && savedSession.scorePages && savedSession.scorePages.length > 0) {
+                updateSavedOptionUI(true);
+                presetSelect.value = "saved";
+                restoreSavedSession(savedSession);
+            } else {
+                loadPresetDemo();
+            }
+
+            presetSelect.addEventListener('change', async (e) => {
+                if (e.target.value === 'custom') {
+                    uploadPanel.classList.remove('hidden');
+                    scorePages = [];
+                    activeMarkers = [];
+                    currentPageIndex = 0;
+                    renderPageTabs();
+                    renderScorePage();
+                    renderPins();
+                    renderTable();
+                } else if (e.target.value === 'saved') {
+                    uploadPanel.classList.add('hidden');
+                    const session = await loadSessionFromDB();
+                    if (session) restoreSavedSession(session);
+                } else {
+                    uploadPanel.classList.add('hidden');
+                    loadPresetDemo();
+                }
+            });
+
+            clearSaveDataBtn.addEventListener('click', () => {
+                showConfirmModal('保存データの消去', '保存されている楽譜写真・音源・ピンデータを削除して初期化しますか？', async () => {
+                    await clearSessionFromDB();
+                    presetSelect.value = "demo1";
+                    loadPresetDemo();
+                });
+            });
+
+            // Multiple Score Images Upload
+            imageInput.addEventListener('change', (e) => {
+                const files = Array.from(e.target.files);
+                if (files.length > 0) {
+                    document.getElementById('imageFileName').innerText = `${files.length}枚の楽譜画像を読み込みました`;
+                    scorePages = [];
+                    let readCount = 0;
+
+                    files.forEach((file, idx) => {
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                            scorePages[idx] = evt.target.result;
+                            readCount++;
+                            if (readCount === files.length) {
+                                currentPageIndex = 0;
+                                renderPageTabs();
+                                renderScorePage();
+                                saveSessionToDB();
+                            }
+                        };
+                        reader.readAsDataURL(file);
+                    });
+                }
+            });
+
+            // Audio Inputs per Part
+            const audioInputs = [
+                { id: 'audioInputMix', nameId: 'audioNameMix', partKey: 'mix' },
+                { id: 'audioInputSoprano', nameId: 'audioNameSoprano', partKey: 'soprano' },
+                { id: 'audioInputAlto', nameId: 'audioNameAlto', partKey: 'alto' },
+                { id: 'audioInputMens', nameId: 'audioNameMens', partKey: 'mens' }
+            ];
+
+            audioInputs.forEach(item => {
+                const el = document.getElementById(item.id);
+                if (!el) return;
+                el.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        audioBlobs[item.partKey] = file;
+                        audioFileNames[item.partKey] = file.name;
+                        document.getElementById(item.nameId).innerText = file.name;
+                        
+                        isUsingSynth = false;
+                        if (selectedPart === item.partKey || (selectedPart === 'mix' && item.partKey === 'mix')) {
+                            loadAudioFileForPart(item.partKey);
+                        }
+                        saveSessionToDB();
+                    }
+                });
+            });
+
+            prevPageBtn.addEventListener('click', () => switchPage(currentPageIndex - 1));
+            nextPageBtn.addEventListener('click', () => switchPage(currentPageIndex + 1));
+
+            zoomInBtn.addEventListener('click', () => setZoom(currentZoom + 10));
+            zoomOutBtn.addEventListener('click', () => setZoom(currentZoom - 10));
+            zoomResetBtn.addEventListener('click', () => setZoom(100));
+
+            if (zoomSlider) {
+                zoomSlider.addEventListener('input', (e) => setZoom(parseFloat(e.target.value)));
+            }
+
+            // Interactive Click Placement on Score Image
+            scoreImageContainer.addEventListener('click', (e) => {
+                if (e.target.closest('.marker-pin-wrapper') || draggingMarkerId !== null) return;
+
+                const rect = scoreImageContainer.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+
+                const xPct = parseFloat(((clickX / rect.width) * 100).toFixed(1));
+                const yPct = parseFloat(((clickY / rect.height) * 100).toFixed(1));
+
+                const time = parseFloat((audioPlayer.currentTime || 0).toFixed(1));
+                const defaultLabel = `${activeMarkers.length + 1}小節`;
+
+                activeMarkers.push({
+                    id: Date.now(),
+                    pageIndex: currentPageIndex,
+                    label: defaultLabel,
+                    time: time,
+                    targetPart: selectedPart,
+                    xPct: xPct,
+                    yPct: yPct
+                });
+
+                activeMarkers.sort((a, b) => a.time - b.time);
+                renderPins();
+                renderTable();
+                saveSessionToDB();
+            });
+
+            // Drag and Drop Pin Adjustments
+            window.addEventListener('pointermove', (e) => {
+                if (!draggingMarkerId) return;
+
+                const rect = scoreImageContainer.getBoundingClientRect();
+                let newX = ((e.clientX - rect.left) / rect.width) * 100;
+                let newY = ((e.clientY - rect.top) / rect.height) * 100;
+
+                newX = Math.max(0, Math.min(100, newX));
+                newY = Math.max(0, Math.min(100, newY));
+
+                const marker = activeMarkers.find(m => m.id === draggingMarkerId);
+                if (marker) {
+                    marker.xPct = parseFloat(newX.toFixed(1));
+                    marker.yPct = parseFloat(newY.toFixed(1));
+
+                    const pinWrapper = document.getElementById(`pin-${marker.id}`);
+                    if (pinWrapper) {
+                        pinWrapper.style.left = `${marker.xPct}%`;
+                        pinWrapper.style.top = `${marker.yPct}%`;
+                    }
+                    updateMarkerRowCoords(marker.id, marker.xPct, marker.yPct);
+                }
+            });
+
+            window.addEventListener('pointerup', () => {
+                if (draggingMarkerId !== null) {
+                    draggingMarkerId = null;
+                    saveSessionToDB();
+                }
+            });
+
+            playBtn.addEventListener('click', togglePlayPause);
+            stopBtn.addEventListener('click', () => {
+                pauseAudio();
+                audioPlayer.currentTime = 0;
+                onAudioTimeUpdate();
+            });
+
+            const handleSeek = (e) => {
+                const time = parseFloat(e.target.value);
+                audioPlayer.currentTime = time;
+                currentTimeText.innerText = formatTime(time);
+            };
+
+            audioSeeker.addEventListener('input', handleSeek);
+            if (fsAudioSeeker) fsAudioSeeker.addEventListener('input', handleSeek);
+
+            speedSelect.addEventListener('change', (e) => {
+                audioPlayer.playbackRate = parseFloat(e.target.value);
+            });
+
+            addMarkerNowBtn.addEventListener('click', () => {
+                const time = parseFloat((audioPlayer.currentTime || 0).toFixed(1));
+                const newId = Date.now();
+                const defaultLabel = `${activeMarkers.length + 1}小節 (${formatTime(time)})`;
+                
+                const xPct = 20 + ((activeMarkers.length * 15) % 60);
+                const yPct = 30 + (Math.floor(activeMarkers.length / 4) * 20);
+
+                activeMarkers.push({
+                    id: newId,
+                    pageIndex: currentPageIndex,
+                    label: defaultLabel,
+                    time: time,
+                    targetPart: selectedPart,
+                    xPct: xPct,
+                    yPct: yPct
+                });
+
+                activeMarkers.sort((a, b) => a.time - b.time);
+                renderPins();
+                renderTable();
+                saveSessionToDB();
+            });
+
+            loopToggleBtn.addEventListener('click', () => {
+                isLooping = !isLooping;
+                const statusEl = document.getElementById('loopStatusText');
+                if (isLooping) {
+                    statusEl.innerText = "ON";
+                    statusEl.className = "text-amber-400 font-bold";
+                    loopToggleBtn.classList.add('bg-amber-950/60', 'border-amber-500');
+                    loopStart = audioPlayer.currentTime;
+                    loopEnd = audioPlayer.duration || (loopStart + 10);
+                } else {
+                    statusEl.innerText = "OFF";
+                    statusEl.className = "text-slate-400";
+                    loopToggleBtn.classList.remove('bg-amber-950/60', 'border-amber-500');
+                }
+            });
+
+            clearPinsBtn.addEventListener('click', () => {
+                showConfirmModal('ピンの削除', 'すべてのタイムスタンプピンを削除しますか？', () => {
+                    activeMarkers = [];
+                    renderPins();
+                    renderTable();
+                    saveSessionToDB();
+                });
+            });
+
+            audioPlayer.addEventListener('timeupdate', onAudioTimeUpdate);
+            audioPlayer.addEventListener('ended', updatePlayButtonUI);
+        });
+
+        /* JSON Export / Import Implementation */
+        async function exportProjectToJSON() {
+            try {
+                const projectData = {
+                    version: "1.0",
+                    exportedAt: new Date().toISOString(),
+                    title: DEMO_PRESET_3P.title,
+                    scorePages: scorePages,
+                    markers: activeMarkers,
+                    audioFileNames: audioFileNames,
+                    selectedPart: selectedPart
+                };
+
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectData, null, 2));
+                const downloadAnchor = document.createElement('a');
+                downloadAnchor.setAttribute("href", dataStr);
+                downloadAnchor.setAttribute("download", `合唱練習プロジェクト_${Date.now()}.json`);
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+
+                showSaveToast('📄 JSONプロジェクトファイルを保存しました');
+            } catch (e) {
+                alert('JSON保存に失敗しました: ' + e.message);
+            }
+        }
+
+        function importProjectFromJSON(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+                try {
+                    const data = JSON.parse(evt.target.result);
+                    if (data && data.scorePages && data.markers) {
+                        scorePages = data.scorePages || [];
+                        activeMarkers = data.markers || [];
+                        audioFileNames = data.audioFileNames || { mix: '', soprano: '', alto: '', mens: '' };
+                        selectedPart = data.selectedPart || 'mix';
+                        currentPageIndex = 0;
+
+                        switchPart(selectedPart);
+                        renderPageTabs();
+                        renderScorePage();
+                        renderPins();
+                        renderTable();
+
+                        await saveSessionToDB();
+                        showSaveToast('✨ JSONファイルを正常に読み込みました');
+                    } else {
+                        alert('無効なJSONプロジェクトファイル形式です');
+                    }
+                } catch (err) {
+                    alert('JSONの読み込みエラー: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function toggleFullscreenPracticeMode() {
+            const container = document.getElementById('scoreViewportContainer');
+            const overlayBar = document.getElementById('fullscreenOverlayBar');
+            const standardHeader = document.getElementById('standardViewportHeader');
+            const standardNav = document.getElementById('standardPageNav');
+
+            isFullscreenMode = !isFullscreenMode;
+
+            if (isFullscreenMode) {
+                container.classList.add('fullscreen-mode');
+                overlayBar.classList.remove('hidden');
+                standardHeader.classList.add('hidden');
+                standardNav.classList.add('hidden');
+                
+                isFitMode = true;
+                applyDisplayFitClass();
+            } else {
+                container.classList.remove('fullscreen-mode');
+                overlayBar.classList.add('hidden');
+                standardHeader.classList.remove('hidden');
+                standardNav.classList.remove('hidden');
+                
+                container.classList.remove('fit-mode', 'scroll-mode');
+                container.classList.add('fit-mode');
+                setZoom(100);
+            }
+        }
+
+        function toggleFitDisplayMode() {
+            isFitMode = !isFitMode;
+            applyDisplayFitClass();
+        }
+
+        function applyDisplayFitClass() {
+            const container = document.getElementById('scoreViewportContainer');
+            const fitIcon = document.getElementById('fitIcon');
+            const fitText = document.getElementById('fitText');
+
+            if (isFitMode) {
+                container.classList.remove('scroll-mode');
+                container.classList.add('fit-mode');
+                if (fitIcon) fitIcon.className = "fa-solid fa-up-right-and-down-left-from-center";
+                if (fitText) fitText.innerText = "全表示 (Fit)";
+                setZoom(100);
+            } else {
+                container.classList.remove('fit-mode');
+                container.classList.add('scroll-mode');
+                if (fitIcon) fitIcon.className = "fa-solid fa-magnifying-glass-plus";
+                if (fitText) fitText.innerText = "拡大スクロール";
+                setZoom(130);
+            }
+        }
+
+        function switchPart(partKey) {
+            selectedPart = partKey;
+
+            // Update Part Tab UI Buttons
+            document.querySelectorAll('.part-tab-btn').forEach(btn => {
+                const p = btn.getAttribute('data-part');
+                if (p === partKey) {
+                    btn.className = "part-tab-btn px-3 py-1.5 text-xs font-bold rounded-lg transition bg-indigo-600 text-white shadow-xs";
+                } else {
+                    btn.className = "part-tab-btn px-3 py-1.5 text-xs font-bold rounded-lg transition text-slate-300 hover:bg-slate-700";
+                }
+            });
+
+            // Update Active Part Badge Indicator
+            const badge = document.getElementById('currentPartBadge');
+            if (badge) {
+                if (partKey === 'soprano') {
+                    badge.innerHTML = `<i class="fa-solid fa-person-dress text-pink-400"></i><span>選択中: ソプラノ (Soprano)</span>`;
+                    badge.className = "text-xs font-bold px-3 py-1.5 rounded-full border border-pink-500/30 bg-pink-950/40 text-pink-300 flex items-center gap-2";
+                } else if (partKey === 'alto') {
+                    badge.innerHTML = `<i class="fa-solid fa-person-dress-burst text-purple-400"></i><span>選択中: アルト (Alto)</span>`;
+                    badge.className = "text-xs font-bold px-3 py-1.5 rounded-full border border-purple-500/30 bg-purple-950/40 text-purple-300 flex items-center gap-2";
+                } else if (partKey === 'mens') {
+                    badge.innerHTML = `<i class="fa-solid fa-person text-sky-400"></i><span>選択中: 男声パート (Tenor/Bass)</span>`;
+                    badge.className = "text-xs font-bold px-3 py-1.5 rounded-full border border-sky-500/30 bg-sky-950/40 text-sky-300 flex items-center gap-2";
+                } else {
+                    badge.innerHTML = `<i class="fa-solid fa-layer-group text-indigo-400"></i><span>選択中: 混声全体 (Mix)</span>`;
+                    badge.className = "text-xs font-bold px-3 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-950/40 text-indigo-300 flex items-center gap-2";
+                }
+            }
+
+            // Audio Source Switch
+            const currentAudioBlob = audioBlobs[partKey] || audioBlobs['mix'];
+            if (currentAudioBlob) {
+                loadAudioFileForPart(partKey);
+            } else {
+                isUsingSynth = true;
+            }
+
+            renderPins();
+            saveSessionToDB();
+        }
+
+        function loadAudioFileForPart(partKey) {
+            const blob = audioBlobs[partKey] || audioBlobs['mix'];
+            if (blob) {
+                const currentTime = audioPlayer.currentTime || 0;
+                audioPlayer.src = URL.createObjectURL(blob);
+                isUsingSynth = false;
+
+                audioPlayer.onloadedmetadata = () => {
+                    audioPlayer.currentTime = currentTime;
+                    document.getElementById('durationTimeText').innerText = formatTime(audioPlayer.duration);
+                    document.getElementById('audioSeeker').max = audioPlayer.duration;
+                    const fsSeeker = document.getElementById('fsAudioSeeker');
+                    if (fsSeeker) fsSeeker.max = audioPlayer.duration;
+                };
+            }
+        }
+
+        function setZoom(newZoomPct) {
+            currentZoom = Math.max(10, Math.min(200, newZoomPct));
+            const scoreImageContainer = document.getElementById('scoreImageContainer');
+            const zoomSlider = document.getElementById('zoomSlider');
+            if (scoreImageContainer && !isFitMode) scoreImageContainer.style.width = `${currentZoom}%`;
+            if (scoreImageContainer && isFitMode) scoreImageContainer.style.width = `100%`;
+
+            const zoomValText = document.getElementById('zoomValText');
+            if (zoomValText) zoomValText.innerText = `${Math.round(currentZoom)}%`;
+            if (zoomSlider) zoomSlider.value = currentZoom;
+        }
+
+        function restoreSavedSession(session) {
+            scorePages = session.scorePages || [];
+            activeMarkers = session.markers || [];
+            audioBlobs = session.audioBlobs || { mix: null, soprano: null, alto: null, mens: null };
+            audioFileNames = session.audioFileNames || { mix: '', soprano: '', alto: '', mens: '' };
+            selectedPart = session.selectedPart || 'mix';
+            currentPageIndex = 0;
+
+            if (audioFileNames.mix) document.getElementById('audioNameMix').innerText = audioFileNames.mix;
+            if (audioFileNames.soprano) document.getElementById('audioNameSoprano').innerText = audioFileNames.soprano;
+            if (audioFileNames.alto) document.getElementById('audioNameAlto').innerText = audioFileNames.alto;
+            if (audioFileNames.mens) document.getElementById('audioNameMens').innerText = audioFileNames.mens;
+
+            switchPart(selectedPart);
+
+            renderPageTabs();
+            renderScorePage();
+            renderPins();
+            renderTable();
+            showSaveToast('✨ 保存データ（楽譜・音源・ピン）を復元しました');
+        }
+
+        function loadPresetDemo() {
+            scorePages = DEMO_PRESET_3P.pages;
+            activeMarkers = JSON.parse(JSON.stringify(DEMO_PRESET_3P.markers));
+            currentPageIndex = 0;
+            selectedPart = 'mix';
+
+            isUsingSynth = true;
+            audioPlayer.src = "";
+            document.getElementById('durationTimeText').innerText = formatTime(50.0);
+            document.getElementById('audioSeeker').max = 50.0;
+            const fsSeeker = document.getElementById('fsAudioSeeker');
+            if (fsSeeker) fsSeeker.max = 50.0;
+
+            switchPart('mix');
+
+            renderPageTabs();
+            renderScorePage();
+            renderPins();
+            renderTable();
+        }
+
+        function renderPageTabs() {
+            const container = document.getElementById('pageTabsContainer');
+            if (!container) return;
+            container.innerHTML = '';
+
+            if (scorePages.length === 0) return;
+
+            scorePages.forEach((_, idx) => {
+                const btn = document.createElement('button');
+                const isSelected = idx === currentPageIndex;
+                btn.className = `px-3 py-1 text-xs font-bold rounded-lg transition ${
+                    isSelected ? 'bg-indigo-600 text-white shadow-xs' : 'bg-transparent text-slate-300 hover:bg-slate-700'
+                }`;
+                btn.innerText = `${idx + 1}P`;
+                btn.addEventListener('click', () => switchPage(idx));
+                container.appendChild(btn);
+            });
+
+            const pageInd = document.getElementById('pageIndicatorText');
+            if (pageInd) pageInd.innerText = `Page ${currentPageIndex + 1} / ${scorePages.length || 1}`;
+
+            const fsInd = document.getElementById('fsPageIndicator');
+            if (fsInd) fsInd.innerText = `${currentPageIndex + 1} / ${scorePages.length || 1}`;
+        }
+
+        function switchPage(pageIdx) {
+            if (pageIdx < 0 || pageIdx >= scorePages.length) return;
+            currentPageIndex = pageIdx;
+            renderPageTabs();
+            renderScorePage();
+            renderPins();
+        }
+
+        function renderScorePage() {
+            const img = document.getElementById('scoreImage');
+            if (!img) return;
+            img.src = scorePages[currentPageIndex] || "";
+        }
+
+        function renderPins() {
+            const overlay = document.getElementById('pinsOverlay');
+            if (!overlay) return;
+            overlay.innerHTML = '';
+
+            const pageMarkers = activeMarkers.filter(m => m.pageIndex === currentPageIndex);
+
+            pageMarkers.forEach((m) => {
+                const pinWrapper = document.createElement('div');
+                let partClass = '';
+                if (m.targetPart === 'soprano') partClass = 'part-soprano';
+                if (m.targetPart === 'alto') partClass = 'part-alto';
+                if (m.targetPart === 'mens') partClass = 'part-mens';
+
+                pinWrapper.className = `marker-pin-wrapper pointer-events-auto ${partClass}`;
+                pinWrapper.id = `pin-${m.id}`;
+                pinWrapper.style.left = `${m.xPct}%`;
+                pinWrapper.style.top = `${m.yPct}%`;
+
+                pinWrapper.innerHTML = `
+                    <div class="marker-pin-card">
+                        <i class="fa-solid fa-play text-[9px]"></i>
+                        <span>${m.label}</span>
+                    </div>
+                `;
+
+                pinWrapper.addEventListener('pointerdown', (e) => {
+                    e.stopPropagation();
+                    draggingMarkerId = m.id;
+                });
+
+                pinWrapper.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    seekToTimeAndPlay(m.time, m.pageIndex);
+                });
+
+                overlay.appendChild(pinWrapper);
+            });
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('markersTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (activeMarkers.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="p-4 text-center text-slate-500">
+                            ピンがまだありません。楽譜の上をタップして新しいタイムスタンプを作成しましょう！
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            activeMarkers.forEach((m) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-700/40 transition border-b border-slate-700/60";
+
+                let partBadge = `<span class="bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold">Mix/全員</span>`;
+                if (m.targetPart === 'soprano') partBadge = `<span class="bg-pink-950/60 border border-pink-500/30 text-pink-300 px-2 py-0.5 rounded text-[10px] font-bold">ソプラノ</span>`;
+                if (m.targetPart === 'alto') partBadge = `<span class="bg-purple-950/60 border border-purple-500/30 text-purple-300 px-2 py-0.5 rounded text-[10px] font-bold">アルト</span>`;
+                if (m.targetPart === 'mens') partBadge = `<span class="bg-sky-950/60 border border-sky-500/30 text-sky-300 px-2 py-0.5 rounded text-[10px] font-bold">男声</span>`;
+
+                tr.innerHTML = `
+                    <td class="p-2.5 font-bold text-indigo-400 whitespace-nowrap">
+                        <span class="bg-slate-900 border border-slate-700 px-2 py-0.5 rounded text-xs font-mono">${m.pageIndex + 1}P</span>
+                    </td>
+                    <td class="p-2.5 font-bold text-slate-200">
+                        <input type="text" value="${m.label}" onchange="updateMarkerLabel(${m.id}, this.value)" class="bg-slate-900/80 border border-slate-700 rounded px-2 py-1 font-bold w-full focus:outline-none focus:border-indigo-500 text-slate-100">
+                    </td>
+                    <td class="p-2.5 font-mono font-bold text-indigo-300 whitespace-nowrap">
+                        <input type="number" step="0.1" value="${m.time}" onchange="updateMarkerTime(${m.id}, this.value)" class="bg-slate-900/80 border border-slate-700 rounded px-1 py-1 font-mono w-16 text-center focus:outline-none text-slate-100"> 秒
+                    </td>
+                    <td class="p-2.5 whitespace-nowrap">
+                        ${partBadge}
+                    </td>
+                    <td class="p-2.5 font-mono text-xs text-slate-400 whitespace-nowrap">
+                        X: <input type="number" step="0.1" value="${m.xPct}" id="input-x-${m.id}" onchange="updateMarkerCoord(${m.id}, 'x', this.value)" class="w-14 bg-slate-900 border border-slate-700 rounded px-1 text-center text-slate-200">% 
+                        Y: <input type="number" step="0.1" value="${m.yPct}" id="input-y-${m.id}" onchange="updateMarkerCoord(${m.id}, 'y', this.value)" class="w-14 bg-slate-900 border border-slate-700 rounded px-1 text-center text-slate-200">%
+                    </td>
+                    <td class="p-2.5 text-center whitespace-nowrap">
+                        <button onclick="seekToTimeAndPlay(${m.time}, ${m.pageIndex})" class="bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white font-bold px-2.5 py-1 rounded-md transition mr-1">
+                            <i class="fa-solid fa-play mr-1"></i>再生
+                        </button>
+                        <button onclick="deleteMarker(${m.id})" class="bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white font-bold px-2 py-1 rounded-md transition">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </td>
+                `;
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateMarkerRowCoords(id, xPct, yPct) {
+            const inputX = document.getElementById(`input-x-${id}`);
+            const inputY = document.getElementById(`input-y-${id}`);
+            if (inputX) inputX.value = xPct;
+            if (inputY) inputY.value = yPct;
+        }
+
+        function updateMarkerCoord(id, axis, val) {
+            const m = activeMarkers.find(item => item.id === id);
+            if (m) {
+                const num = parseFloat(val) || 0;
+                if (axis === 'x') m.xPct = Math.max(0, Math.min(100, num));
+                if (axis === 'y') m.yPct = Math.max(0, Math.min(100, num));
+                renderPins();
+                saveSessionToDB();
+            }
+        }
+
+        function updateMarkerLabel(id, newLabel) {
+            const m = activeMarkers.find(item => item.id === id);
+            if (m) {
+                m.label = newLabel;
+                renderPins();
+                saveSessionToDB();
+            }
+        }
+
+        function updateMarkerTime(id, newTime) {
+            const m = activeMarkers.find(item => item.id === id);
+            if (m) {
+                m.time = parseFloat(newTime) || 0;
+                activeMarkers.sort((a, b) => a.time - b.time);
+                renderPins();
+                renderTable();
+                saveSessionToDB();
+            }
+        }
+
+        function deleteMarker(id) {
+            activeMarkers = activeMarkers.filter(m => m.id !== id);
+            renderPins();
+            renderTable();
+            saveSessionToDB();
+        }
+
+        function togglePlayPause() {
+            if (audioPlayer.paused && !synthTimer) {
+                playAudio();
+            } else {
+                pauseAudio();
+            }
+        }
+
+        function playAudio() {
+            if (isUsingSynth) {
+                startSynthPlayback(audioPlayer.currentTime || 0);
+            } else {
+                audioPlayer.play();
+            }
+            updatePlayButtonUI();
+        }
+
+        function pauseAudio() {
+            if (isUsingSynth) {
+                if (synthTimer) {
+                    clearInterval(synthTimer);
+                    synthTimer = null;
+                }
+            } else {
+                audioPlayer.pause();
+            }
+            updatePlayButtonUI();
+        }
+
+        function seekToTimeAndPlay(time, pageIndex = null) {
+            if (pageIndex !== null && pageIndex !== currentPageIndex) {
+                switchPage(pageIndex);
+            }
+            audioPlayer.currentTime = time;
+            playAudio();
+        }
+
+        function updatePlayButtonUI() {
+            const isPlaying = (!audioPlayer.paused) || (synthTimer !== null);
+            const playIcon = document.getElementById('playIcon');
+            const playText = document.getElementById('playText');
+            const fsPlayIcon = document.getElementById('fsPlayIcon');
+            const fsPlayText = document.getElementById('fsPlayText');
+
+            if (playIcon && playText) {
+                if (isPlaying) {
+                    playIcon.className = "fa-solid fa-pause text-lg";
+                    playText.innerText = "一時停止";
+                } else {
+                    playIcon.className = "fa-solid fa-play text-lg";
+                    playText.innerText = "再生";
+                }
+            }
+
+            if (fsPlayIcon && fsPlayText) {
+                if (isPlaying) {
+                    fsPlayIcon.className = "fa-solid fa-pause";
+                    fsPlayText.innerText = "一時停止";
+                } else {
+                    fsPlayIcon.className = "fa-solid fa-play";
+                    fsPlayText.innerText = "再生";
+                }
+            }
+        }
+
+        function startSynthPlayback(startTime) {
+            if (!synthAudioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                synthAudioCtx = new AudioContext();
+            }
+            if (synthAudioCtx.state === 'suspended') {
+                synthAudioCtx.resume();
+            }
+
+            audioPlayer.currentTime = startTime;
+            if (synthTimer) clearInterval(synthTimer);
+            
+            synthTimer = setInterval(() => {
+                audioPlayer.currentTime += 0.1;
+                onAudioTimeUpdate();
+                
+                if (Math.floor(audioPlayer.currentTime * 10) % 5 === 0) {
+                    playDemoPartChime();
+                }
+
+                if (audioPlayer.currentTime >= 50.0) {
+                    pauseAudio();
+                }
+            }, 100);
+        }
+
+        function playDemoPartChime() {
+            if (!synthAudioCtx) return;
+            try {
+                const osc = synthAudioCtx.createOscillator();
+                const gain = synthAudioCtx.createGain();
+                osc.type = 'sine';
+                
+                let scale = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25];
+                if (selectedPart === 'soprano') {
+                    scale = [523.25, 587.33, 659.25, 698.46, 783.99, 880.00, 987.77, 1046.50];
+                } else if (selectedPart === 'alto') {
+                    scale = [349.23, 392.00, 440.00, 493.88, 523.25, 587.33, 659.25, 698.46];
+                } else if (selectedPart === 'mens') {
+                    scale = [130.81, 146.83, 164.81, 174.61, 196.00, 220.00, 246.94, 261.63];
+                }
+
+                const noteIndex = Math.floor(audioPlayer.currentTime * 2) % scale.length;
+                osc.frequency.setValueAtTime(scale[noteIndex], synthAudioCtx.currentTime);
+
+                gain.gain.setValueAtTime(0.05, synthAudioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, synthAudioCtx.currentTime + 0.25);
+
+                osc.connect(gain);
+                gain.connect(synthAudioCtx.destination);
+                osc.start();
+                osc.stop(synthAudioCtx.currentTime + 0.25);
+            } catch(e) {}
+        }
+
+        function onAudioTimeUpdate() {
+            const time = audioPlayer.currentTime || 0;
+            const duration = isUsingSynth ? 50.0 : (audioPlayer.duration || 100);
+
+            const currText = document.getElementById('currentTimeText');
+            const durText = document.getElementById('durationTimeText');
+            const fsCurrText = document.getElementById('fsCurrentTimeText');
+            const seeker = document.getElementById('audioSeeker');
+            const fsSeeker = document.getElementById('fsAudioSeeker');
+
+            if (currText) currText.innerText = formatTime(time);
+            if (durText) durText.innerText = formatTime(duration);
+            if (fsCurrText) fsCurrText.innerText = formatTime(time);
+            if (seeker) seeker.value = time;
+            if (fsSeeker) fsSeeker.value = time;
+
+            if (isLooping && loopEnd > loopStart && time >= loopEnd) {
+                audioPlayer.currentTime = loopStart;
+            }
+
+            highlightActivePinAndAutoPage(time);
+        }
+
+        function highlightActivePinAndAutoPage(currentTime) {
+            let activeMarker = null;
+            for (let i = 0; i < activeMarkers.length; i++) {
+                if (currentTime >= activeMarkers[i].time) {
+                    activeMarker = activeMarkers[i];
+                }
+            }
+
+            if (activeMarker) {
+                if (activeMarker.pageIndex !== currentPageIndex) {
+                    switchPage(activeMarker.pageIndex);
+                }
+
+                document.querySelectorAll('.marker-pin-wrapper').forEach(pin => {
+                    if (pin.id === `pin-${activeMarker.id}`) {
+                        pin.classList.add('active-pin');
+                    } else {
+                        pin.classList.remove('active-pin');
+                    }
+                });
+            }
+        }
+
+        function formatTime(seconds) {
+            if (isNaN(seconds) || seconds < 0) return "00:00";
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+    </script>
+</body>
+</html>
